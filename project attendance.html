@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TEC Attendance Management System — Trichy Engineering College</title>
+<meta name="description" content="Attendance Management System for Department of AI & Data Science, Trichy Engineering College." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f7fb; --surface:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --brand:#1d4ed8; --brand-2:#2563eb; --line:#e5e7eb;
+    --ok:#16a34a; --warn:#ea580c; --bad:#dc2626; --late:#ca8a04; --leave:#7c3aed;
+  }
+  html,body{font-family:'Inter',ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px -12px rgba(15,23,42,.08)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem .9rem;border-radius:10px;font-weight:600;font-size:.875rem;transition:.15s;border:1px solid transparent;cursor:pointer;white-space:nowrap}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:#1e40af}
+  .btn-outline{background:#fff;border-color:var(--line);color:var(--ink)}
+  .btn-outline:hover{background:#f8fafc}
+  .btn-ghost{color:var(--ink)}
+  .btn-ghost:hover{background:#f1f5f9}
+  .btn-danger{background:var(--bad);color:#fff}
+  .input,.select{width:100%;background:#fff;border:1px solid var(--line);border-radius:10px;padding:.55rem .75rem;font-size:.875rem;outline:none;transition:.15s}
+  .input:focus,.select:focus{border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+  .label{font-size:.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.35rem;display:block}
+  .badge{display:inline-flex;align-items:center;gap:.3rem;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
+  .b-present{background:#dcfce7;color:#166534}
+  .b-absent{background:#fee2e2;color:#991b1b}
+  .b-late{background:#fef9c3;color:#854d0e}
+  .b-leave{background:#ede9fe;color:#5b21b6}
+  .b-none{background:#f1f5f9;color:#475569}
+  .nav a{display:flex;gap:.7rem;align-items:center;padding:.6rem .8rem;border-radius:10px;color:#475569;font-weight:500;font-size:.9rem}
+  .nav a.active{background:#eff6ff;color:var(--brand);font-weight:600}
+  .nav a:hover:not(.active){background:#f1f5f9;color:var(--ink)}
+  .row-hover:hover{background:#f8fafc}
+  .fade{animation:fade .25s ease-out}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .skeleton{background:linear-gradient(90deg,#eef2f7 25%,#e5e7eb 37%,#eef2f7 63%);background-size:400% 100%;animation:sh 1.4s infinite;border-radius:8px}
+  @keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
+  .toast{animation:pop .3s ease-out}
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{height:10px;width:10px}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+  .heat{display:inline-block;width:14px;height:14px;border-radius:3px;margin:1px}
+  .status-pill{cursor:pointer;padding:.3rem .65rem;border-radius:8px;font-size:.75rem;font-weight:600;border:1px solid var(--line);background:#fff}
+  .status-pill.active-P{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .status-pill.active-A{background:var(--bad);color:#fff;border-color:var(--bad)}
+  .status-pill.active-L{background:var(--late);color:#fff;border-color:var(--late)}
+  .status-pill.active-V{background:var(--leave);color:#fff;border-color:var(--leave)}
+  @media(max-width:900px){.sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);z-index:60;transition:.25s;width:260px}.sidebar.open{transform:none}.backdrop{position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:50}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   TEC Attendance Management System — single-file app
+   Department of AI & Data Science, Trichy Engineering College
+   Storage: localStorage (acts as the DB layer with a repository
+   pattern). Auth: hashed password + signed token (HMAC-like).
+============================================================ */
+
+/* ---------- utilities ---------- */
+const $ = (sel, el=document) => el.querySelector(sel);
+const uid = () => Math.random().toString(36).slice(2,10);
+const todayISO = () => new Date().toISOString().slice(0,10);
+const fmtDate = (iso) => { const d=new Date(iso+'T00:00'); return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); };
+const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
+async function sha256(s){const b=new TextEncoder().encode(s);const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+function toast(msg,type='success'){
+  const wrap = $('#toasts') || (()=>{const d=document.createElement('div');d.id='toasts';d.className='fixed bottom-5 right-5 z-[100] flex flex-col gap-2';document.body.appendChild(d);return d;})();
+  const el=document.createElement('div');
+  const colors={success:'bg-emerald-600',error:'bg-red-600',info:'bg-slate-800',warn:'bg-amber-600'};
+  el.className=`toast text-white px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium ${colors[type]||colors.info}`;
+  el.textContent=msg; wrap.appendChild(el);
+  setTimeout(()=>{el.style.opacity='0';el.style.transform='translateY(6px)';setTimeout(()=>el.remove(),200);},2600);
+}
+
+/* ---------- seed data ---------- */
+const TAMIL_FIRST_M=['Arun','Bala','Chandran','Dinesh','Ezhil','Ganesh','Hariharan','Iniyan','Jeeva','Karthik','Logesh','Manikandan','Naveen','Om','Prasanth','Ragul','Sathish','Tamil','Udhaya','Vignesh','Yogesh','Aravind','Barath','Deepak','Elango','Gokul','Harish','Jagan','Kavin','Mohan'];
+const TAMIL_FIRST_F=['Aishwarya','Bhavana','Divya','Eshwari','Gayathri','Hemalatha','Indhu','Janani','Kavya','Lavanya','Meena','Nithya','Priya','Ranjani','Sowmya','Thanya','Uma','Vaishnavi','Yamuna','Abirami'];
+const TAMIL_LAST=['Kumar','Raj','Prabhu','Sundar','Murugan','Selvam','Krishnan','Ramesh','Muthu','Palani','Saravanan','Anand','Balaji','Chandran','Devan','Elangovan','Ganapathy','Iyer','Jayaraman','Karthikeyan'];
+const SUBJECTS=[
+  {code:'AI3401',name:'Machine Learning',credit:4},
+  {code:'AI3402',name:'Deep Learning',credit:4},
+  {code:'AI3403',name:'Data Analytics',credit:3},
+  {code:'AI3404',name:'Computer Vision',credit:3},
+  {code:'AI3405',name:'Natural Language Processing',credit:3},
+  {code:'AI3406',name:'Big Data Technologies',credit:3},
+];
+const HOURS=['1st Hour (09:00-09:50)','2nd Hour (09:50-10:40)','3rd Hour (11:00-11:50)','4th Hour (11:50-12:40)','5th Hour (01:30-02:20)','6th Hour (02:20-03:10)'];
+
+function makeStudents(){
+  const arr=[];
+  for(let i=1;i<=40;i++){
+    const isF = i%3===0;
+    const fn = isF ? TAMIL_FIRST_F[(i*7)%TAMIL_FIRST_F.length] : TAMIL_FIRST_M[(i*3)%TAMIL_FIRST_M.length];
+    const ln = TAMIL_LAST[(i*5)%TAMIL_LAST.length];
+    const reg = '23AI'+String(i).padStart(3,'0');
+    const name = `${fn} ${ln.charAt(0)}.`.length? `${fn} ${ln}` : fn;
+    arr.push({
+      id:reg,
+      regNo:reg,
+      rollNo:'AI'+String(i).padStart(2,'0'),
+      name:`${fn} ${ln}`,
+      gender:isF?'Female':'Male',
+      department:'AI & Data Science',
+      section:'A',
+      year:'III',
+      semester:'5',
+      email:`${fn}.${ln}`.toLowerCase().replace(/\s+/g,'')+`@tec.ac.in`,
+      phone:'+91 9'+String(400000000+i*137891).slice(0,9),
+    });
+  }
+  return arr;
+}
+
+/* ---------- repository (localStorage) ---------- */
+const DB_KEY='tec_ams_v1';
+const Repo = {
+  load(){ try{return JSON.parse(localStorage.getItem(DB_KEY))||null}catch{return null} },
+  save(db){ localStorage.setItem(DB_KEY, JSON.stringify(db)); },
+  reset(){ localStorage.removeItem(DB_KEY); },
+};
+async function initDB(force=false){
+  let db = Repo.load();
+  if(db && !force) return db;
+  const passHash = await sha256('faculty@123');
+  db = {
+    faculty:{
+      id:'FAC1024',
+      name:'Dr. Meenakshi Subramanian',
+      designation:'Associate Professor',
+      department:'AI & Data Science',
+      email:'meenakshi.s@tec.ac.in',
+      phone:'+91 9843012567',
+      username:'faculty',
+      passHash,
+      avatar:'MS',
+      lastLogin:null,
+    },
+    department:{name:'Artificial Intelligence and Data Science',code:'AIDS',college:'Trichy Engineering College',location:'Trichy, Tamil Nadu'},
+    students: makeStudents(),
+    subjects: SUBJECTS,
+    hours: HOURS,
+    attendance: [],   // {id,date,hour,subject,section,semester,records:[{regNo,status}], createdAt, updatedAt, lockedByAdmin:false}
+    audit: [],
+    settings:{lowThreshold:75, criticalThreshold:60},
+  };
+  // seed 60 days of attendance
+  const start=new Date(); start.setDate(start.getDate()-60);
+  for(let d=0; d<60; d++){
+    const day = new Date(start); day.setDate(start.getDate()+d);
+    if(day.getDay()===0) continue; // skip Sunday
+    const iso = day.toISOString().slice(0,10);
+    // 3 random classes / day
+    const shuffled = [...SUBJECTS].sort(()=>Math.random()-0.5).slice(0,3);
+    shuffled.forEach((sub,idx)=>{
+      const records = db.students.map(s=>{
+        // realistic distribution — some students weaker
+        const seed = (parseInt(s.regNo.slice(-3))*13 + d) % 100;
+        const bias = parseInt(s.regNo.slice(-3)) % 10; // 0..9
+        const r = Math.random()*100;
+        let status='P';
+        if(bias>=8){ // weaker students
+          if(r<18) status='A'; else if(r<24) status='L'; else if(r<26) status='V';
+        } else if(bias>=5){
+          if(r<8) status='A'; else if(r<12) status='L'; else if(r<13) status='V';
+        } else {
+          if(r<4) status='A'; else if(r<7) status='L';
+        }
+        return {regNo:s.regNo,status};
+      });
+      db.attendance.push({
+        id:uid(),
+        date:iso, hour:HOURS[idx+1], subject:sub.code,
+        section:'A', semester:'5',
+        records, createdAt:iso, updatedAt:iso, lockedByAdmin:false,
+      });
+    });
+  }
+  db.audit.push({at:new Date().toISOString(),actor:'system',action:'DB_SEED',detail:`Seeded ${db.attendance.length} attendance sessions`});
+  Repo.save(db);
+  return db;
+}
+
+/* ---------- auth ---------- */
+const TOKEN_KEY='tec_ams_token';
+async function signToken(payload){
+  const body = btoa(JSON.stringify(payload));
+  const sig = (await sha256(body+'|tec-secret')).slice(0,32);
+  return `${body}.${sig}`;
+}
+async function verifyToken(tok){
+  if(!tok||!tok.includes('.')) return null;
+  const [body,sig]=tok.split('.');
+  const expect = (await sha256(body+'|tec-secret')).slice(0,32);
+  if(sig!==expect) return null;
+  try{ const p=JSON.parse(atob(body)); if(p.exp && p.exp<Date.now()) return null; return p; }catch{return null}
+}
+async function login(u,p){
+  const db = await initDB();
+  if(u!==db.faculty.username) throw new Error('Invalid username or password');
+  const h = await sha256(p);
+  if(h!==db.faculty.passHash) throw new Error('Invalid username or password');
+  db.faculty.lastLogin = new Date().toISOString();
+  db.audit.push({at:new Date().toISOString(),actor:db.faculty.username,action:'LOGIN',detail:'Faculty login successful'});
+  Repo.save(db);
+  const tok = await signToken({sub:db.faculty.id,u:db.faculty.username,exp:Date.now()+8*3600*1000});
+  localStorage.setItem(TOKEN_KEY,tok);
+  return tok;
+}
+function logout(){ localStorage.removeItem(TOKEN_KEY); location.hash='#/login'; render(); }
+
+/* ---------- domain services ---------- */
+const Svc = {
+  getDB(){ return Repo.load(); },
+  saveDB(db){ Repo.save(db); },
+  studentAttendanceStats(regNo, opts={}){
+    const db=this.getDB();
+    let sessions = db.attendance;
+    if(opts.subject) sessions = sessions.filter(s=>s.subject===opts.subject);
+    if(opts.from) sessions = sessions.filter(s=>s.date>=opts.from);
+    if(opts.to) sessions = sessions.filter(s=>s.date<=opts.to);
+    let P=0,A=0,L=0,V=0,total=0;
+    sessions.forEach(sess=>{
+      const rec = sess.records.find(r=>r.regNo===regNo);
+      if(!rec) return; total++;
+      if(rec.status==='P')P++; else if(rec.status==='A')A++; else if(rec.status==='L')L++; else if(rec.status==='V')V++;
+    });
+    // Late counts as present for %
+    const attended = P+L;
+    const pct = total? (attended/total*100) : 0;
+    return {P,A,L,V,total,attended,pct};
+  },
+  overallStats(opts={}){
+    const db=this.getDB();
+    return db.students.map(s=>({student:s, ...this.studentAttendanceStats(s.regNo,opts)}));
+  },
+  todayStats(){
+    const db=this.getDB(); const t=todayISO();
+    const today = db.attendance.filter(a=>a.date===t);
+    let P=0,A=0,L=0,V=0,total=0;
+    today.forEach(sess=>sess.records.forEach(r=>{total++; if(r.status==='P')P++; else if(r.status==='A')A++; else if(r.status==='L')L++; else if(r.status==='V')V++;}));
+    return {sessions:today.length, P,A,L,V,total, pct: total? ((P+L)/total*100):0};
+  },
+  saveAttendance({date,hour,subject,section,semester,records}){
+    const db=this.getDB();
+    // validate
+    if(!date||!hour||!subject) throw new Error('Missing required fields');
+    if(!records || records.length===0) throw new Error('Attendance is empty');
+    if(records.some(r=>!r.status)) throw new Error('Every student must have a status');
+    if(new Date(date) > new Date(todayISO())) throw new Error('Cannot mark attendance for future dates');
+    // duplicate check
+    const dup = db.attendance.find(a=>a.date===date && a.hour===hour && a.subject===subject && a.section===section && a.semester===semester);
+    if(dup){
+      // allow edit only if same day and not locked
+      if(dup.date!==todayISO() && !dup.lockedByAdmin===false) {
+        // (kept simple) allow edit only on same day unless admin unlocked
+      }
+      if(dup.date!==todayISO() && dup.lockedByAdmin!==true){
+        throw new Error('Previous day attendance is locked. Ask admin to unlock.');
+      }
+      dup.records=records; dup.updatedAt=new Date().toISOString();
+      db.audit.push({at:new Date().toISOString(),actor:db.faculty.username,action:'ATTENDANCE_UPDATE',detail:`${subject} ${date} ${hour}`});
+    } else {
+      db.attendance.push({id:uid(),date,hour,subject,section,semester,records,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),lockedByAdmin:false});
+      db.audit.push({at:new Date().toISOString(),actor:db.faculty.username,action:'ATTENDANCE_CREATE',detail:`${subject} ${date} ${hour}`});
+    }
+    Repo.save(db);
+  },
+  findSession(q){
+    const db=this.getDB();
+    return db.attendance.find(a=>a.date===q.date&&a.hour===q.hour&&a.subject===q.subject&&a.section===q.section&&a.semester===q.semester);
+  },
+};
+
+/* ---------- router ---------- */
+const routes = {
+  '#/login':renderLogin,
+  '#/dashboard':renderDashboard,
+  '#/attendance':renderMarkAttendance,
+  '#/history':renderHistory,
+  '#/students':renderStudents,
+  '#/analytics':renderAnalytics,
+  '#/reports':renderReports,
+  '#/profile':renderProfile,
+};
+async function render(){
+  await initDB();
+  const hash = location.hash || '#/dashboard';
+  const tok = await verifyToken(localStorage.getItem(TOKEN_KEY));
+  if(!tok && hash!=='#/login'){ location.hash='#/login'; return; }
+  if(tok && hash==='#/login'){ location.hash='#/dashboard'; return; }
+  const fn = routes[hash] || renderDashboard;
+  await fn();
+}
+window.addEventListener('hashchange',render);
+window.addEventListener('load',render);
+
+/* ---------- shells ---------- */
+function shell(active, content){
+  const db=Svc.getDB();
+  const f=db.faculty;
+  return `
+  <div class="min-h-screen flex">
+    <div id="backdrop" class="backdrop hidden" onclick="toggleSidebar(false)"></div>
+    <aside id="sidebar" class="sidebar w-64 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <div class="px-5 py-5 border-b border-slate-200">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-600 to-blue-800 text-white grid place-items-center font-bold">TEC</div>
+          <div>
+            <div class="font-bold text-sm leading-tight">Trichy Engineering<br/>College</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">AI & Data Science</div>
+          </div>
+        </div>
+      </div>
+      <nav class="nav p-3 flex-1 space-y-1 text-sm">
+        ${[
+          ['#/dashboard','Dashboard','M3 12l2-2 4 4 8-8 2 2-10 10-6-6z'],
+          ['#/attendance','Mark Attendance','M9 12l2 2 4-4M12 2a10 10 0 100 20 10 10 0 000-20z'],
+          ['#/history','Attendance History','M12 8v4l3 2M12 2a10 10 0 100 20 10 10 0 000-20z'],
+          ['#/students','Students','M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75'],
+          ['#/analytics','Analytics','M3 3v18h18M7 15l4-4 4 4 5-6'],
+          ['#/reports','Reports','M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M9 13h6M9 17h6'],
+          ['#/profile','Profile','M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z'],
+        ].map(([h,l,p])=>`<a href="${h}" class="${active===h?'active':''}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${p}"/></svg>${l}</a>`).join('')}
+      </nav>
+      <div class="p-3 border-t border-slate-200">
+        <button class="btn btn-outline w-full" onclick="logout()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Logout
+        </button>
+      </div>
+    </aside>
+    <main class="flex-1 min-w-0">
+      <header class="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-6 gap-3 sticky top-0 z-40">
+        <button class="md:hidden btn btn-ghost !p-2" onclick="toggleSidebar(true)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="min-w-0">
+          <div class="text-xs text-slate-500">${db.department.college} • ${db.department.location}</div>
+          <div class="font-semibold text-sm md:text-base truncate">TEC Attendance Management System</div>
+        </div>
+        <div class="ml-auto flex items-center gap-3">
+          <div class="hidden sm:block text-right">
+            <div class="text-sm font-semibold leading-tight">${f.name}</div>
+            <div class="text-[11px] text-slate-500">${f.designation}</div>
+          </div>
+          <div class="w-9 h-9 rounded-full bg-blue-600 text-white grid place-items-center font-semibold text-sm">${f.avatar}</div>
+        </div>
+      </header>
+      <div class="p-4 md:p-6 fade">${content}</div>
+    </main>
+  </div>`;
+}
+function toggleSidebar(open){ const s=$('#sidebar'), b=$('#backdrop'); if(!s)return; if(open){s.classList.add('open');b.classList.remove('hidden');} else {s.classList.remove('open');b.classList.add('hidden');} }
+window.toggleSidebar=toggleSidebar; window.logout=logout;
+
+/* ---------- login ---------- */
+async function renderLogin(){
+  $('#app').innerHTML = `
+  <div class="min-h-screen grid md:grid-cols-2">
+    <div class="hidden md:flex flex-col justify-between p-10 bg-gradient-to-br from-blue-700 via-blue-800 to-slate-900 text-white">
+      <div>
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-white/10 grid place-items-center font-bold border border-white/20">TEC</div>
+          <div>
+            <div class="font-bold">Trichy Engineering College</div>
+            <div class="text-xs opacity-70">Trichy, Tamil Nadu</div>
+          </div>
+        </div>
+        <h1 class="mt-16 text-4xl font-bold leading-tight">Attendance Management<br/>System</h1>
+        <p class="mt-4 opacity-80 max-w-md">Department of Artificial Intelligence & Data Science. Secure faculty portal for daily attendance, analytics, and reporting.</p>
+        <ul class="mt-8 space-y-2 text-sm opacity-90">
+          <li>• Realtime dashboard & analytics</li>
+          <li>• Hour-wise, subject-wise attendance</li>
+          <li>• PDF / Excel / CSV reports</li>
+          <li>• Full audit trail</li>
+        </ul>
+      </div>
+      <div class="text-xs opacity-60">© ${new Date().getFullYear()} Trichy Engineering College — AIDS Dept.</div>
+    </div>
+    <div class="flex items-center justify-center p-6">
+      <form id="loginForm" class="card w-full max-w-md p-8">
+        <div class="text-center mb-6">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-blue-600 text-white grid place-items-center font-bold text-xl">TEC</div>
+          <h2 class="mt-4 text-2xl font-bold">Faculty Sign in</h2>
+          <p class="text-sm text-slate-500 mt-1">Use your faculty credentials to continue</p>
+        </div>
+        <label class="label">Username</label>
+        <input name="username" class="input" placeholder="faculty" required autocomplete="username"/>
+        <label class="label mt-4">Password</label>
+        <input name="password" type="password" class="input" placeholder="••••••••" required autocomplete="current-password"/>
+        <div class="flex items-center justify-between mt-3 text-xs text-slate-500">
+          <label class="flex items-center gap-2"><input type="checkbox" class="rounded"/> Remember me</label>
+          <a class="text-blue-600 hover:underline" href="#">Forgot password?</a>
+        </div>
+        <button class="btn btn-primary w-full mt-6" type="submit">Sign in</button>
+        <div class="mt-5 text-xs text-center text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-3">
+          <b>Demo credentials</b><br/>Username: <code>faculty</code> &nbsp; Password: <code>faculty@123</code>
+        </div>
+      </form>
+    </div>
+  </div>`;
+  $('#loginForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const fd=new FormData(e.target);
+    const btn=e.target.querySelector('button[type=submit]');
+    btn.disabled=true; btn.textContent='Signing in...';
+    try{
+      await login(fd.get('username').trim(), fd.get('password'));
+      toast('Welcome back!','success');
+      location.hash='#/dashboard';
+    }catch(err){ toast(err.message,'error'); btn.disabled=false; btn.textContent='Sign in'; }
+  });
+}
+
+/* ---------- dashboard ---------- */
+async function renderDashboard(){
+  const db=Svc.getDB();
+  const t=Svc.todayStats();
+  const overall=Svc.overallStats();
+  const low = overall.filter(o=>o.total>0 && o.pct<db.settings.lowThreshold).length;
+  const critical = overall.filter(o=>o.total>0 && o.pct<db.settings.criticalThreshold).length;
+  const recent=[...db.attendance].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,6);
+  $('#app').innerHTML = shell('#/dashboard',`
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <h1 class="text-2xl font-bold">Dashboard</h1>
+        <p class="text-sm text-slate-500">${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})} • Welcome, ${db.faculty.name.split(' ')[0]} ${db.faculty.name.split(' ')[1]||''}</p>
+      </div>
+      <div class="flex gap-2">
+        <a href="#/attendance" class="btn btn-primary">+ Mark Attendance</a>
+        <a href="#/reports" class="btn btn-outline">Generate Report</a>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      ${[
+        ['Total Students', db.students.length, 'blue','M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z'],
+        ['Sessions Today', t.sessions, 'indigo','M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z'],
+        ["Today's Present", t.P, 'emerald','M20 6L9 17l-5-5'],
+        ["Today's Absent", t.A, 'rose','M18 6L6 18M6 6l12 12'],
+      ].map(([label,val,c,path])=>`
+        <div class="card p-4">
+          <div class="flex items-center justify-between">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">${label}</div>
+            <div class="w-9 h-9 rounded-lg bg-${c}-50 text-${c}-600 grid place-items-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg></div>
+          </div>
+          <div class="mt-2 text-3xl font-bold">${val}</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+      <div class="card p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Today's Attendance %</div>
+        <div class="mt-2 text-3xl font-bold text-blue-700">${t.pct.toFixed(1)}%</div>
+        <div class="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-blue-600" style="width:${t.pct}%"></div></div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Late Today</div>
+        <div class="mt-2 text-3xl font-bold text-amber-600">${t.L}</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Below 75%</div>
+        <div class="mt-2 text-3xl font-bold text-orange-600">${low}</div>
+      </div>
+      <div class="card p-4">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Critical (&lt;60%)</div>
+        <div class="mt-2 text-3xl font-bold text-red-600">${critical}</div>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-4 mt-4">
+      <div class="card p-4 lg:col-span-2">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold">Monthly Attendance Trend</h3>
+          <span class="text-xs text-slate-500">Last 30 days</span>
+        </div>
+        <canvas id="chartMonthly" height="120"></canvas>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2">Subject-wise %</h3>
+        <canvas id="chartSubject" height="180"></canvas>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-4 mt-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2">Weekly Attendance</h3>
+        <canvas id="chartWeekly" height="180"></canvas>
+      </div>
+      <div class="card p-4 lg:col-span-2">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold">Recent Attendance Activity</h3>
+          <a href="#/history" class="text-xs text-blue-600 font-semibold">View all →</a>
+        </div>
+        <div class="divide-y divide-slate-100">
+          ${recent.length===0?'<div class="text-sm text-slate-500 py-6 text-center">No activity yet.</div>':
+          recent.map(r=>{
+            const sub=db.subjects.find(s=>s.code===r.subject);
+            const p=r.records.filter(x=>x.status==='P').length;
+            const a=r.records.filter(x=>x.status==='A').length;
+            return `<div class="py-3 flex items-center gap-3">
+              <div class="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 grid place-items-center font-semibold text-xs">${r.subject}</div>
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-semibold truncate">${sub?.name||r.subject}</div>
+                <div class="text-xs text-slate-500">${fmtDate(r.date)} • ${r.hour}</div>
+              </div>
+              <div class="text-xs"><span class="badge b-present">P ${p}</span> <span class="badge b-absent ml-1">A ${a}</span></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `);
+  drawDashboardCharts();
+}
+
+function drawDashboardCharts(){
+  const db=Svc.getDB();
+  // monthly (30 days)
+  const days=[]; const pcts=[];
+  for(let i=29;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const iso=d.toISOString().slice(0,10);
+    const sess=db.attendance.filter(a=>a.date===iso);
+    let tot=0,pl=0;
+    sess.forEach(s=>s.records.forEach(r=>{tot++; if(r.status==='P'||r.status==='L') pl++;}));
+    days.push(d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'}));
+    pcts.push(tot?+(pl/tot*100).toFixed(1):0);
+  }
+  new Chart($('#chartMonthly'),{type:'line',data:{labels:days,datasets:[{label:'Attendance %',data:pcts,borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',fill:true,tension:.35,pointRadius:0,borderWidth:2}]},options:{plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}}}}});
+
+  // subject
+  const subs=db.subjects.map(s=>{
+    const sess=db.attendance.filter(a=>a.subject===s.code);
+    let tot=0,pl=0;
+    sess.forEach(x=>x.records.forEach(r=>{tot++; if(r.status==='P'||r.status==='L') pl++;}));
+    return {code:s.code, pct: tot?+(pl/tot*100).toFixed(1):0};
+  });
+  new Chart($('#chartSubject'),{type:'doughnut',data:{labels:subs.map(s=>s.code),datasets:[{data:subs.map(s=>s.pct),backgroundColor:['#2563eb','#0ea5e9','#7c3aed','#16a34a','#f59e0b','#ef4444']}]},options:{plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
+
+  // weekly (7 days)
+  const wlabels=[]; const wp=[],wa=[],wl=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const iso=d.toISOString().slice(0,10);
+    const sess=db.attendance.filter(a=>a.date===iso);
+    let P=0,A=0,L=0;
+    sess.forEach(s=>s.records.forEach(r=>{if(r.status==='P')P++;else if(r.status==='A')A++;else if(r.status==='L')L++;}));
+    wlabels.push(d.toLocaleDateString('en-IN',{weekday:'short'})); wp.push(P); wa.push(A); wl.push(L);
+  }
+  new Chart($('#chartWeekly'),{type:'bar',data:{labels:wlabels,datasets:[
+    {label:'Present',data:wp,backgroundColor:'#16a34a'},
+    {label:'Absent',data:wa,backgroundColor:'#dc2626'},
+    {label:'Late',data:wl,backgroundColor:'#ca8a04'},
+  ]},options:{plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},scales:{x:{stacked:true},y:{stacked:true}}}});
+}
+
+/* ---------- mark attendance ---------- */
+async function renderMarkAttendance(){
+  const db=Svc.getDB();
+  const state={
+    department:'AI & Data Science', semester:'5', section:'A',
+    subject:db.subjects[0].code, date:todayISO(), hour:db.hours[0],
+    statuses:Object.fromEntries(db.students.map(s=>[s.regNo,'P'])),
+  };
+  const draw=()=>{
+    const existing=Svc.findSession({date:state.date,hour:state.hour,subject:state.subject,section:state.section,semester:state.semester});
+    if(existing) existing.records.forEach(r=>state.statuses[r.regNo]=r.status);
+    const readonly = existing && existing.date!==todayISO() && !existing.lockedByAdmin;
+    const counts={P:0,A:0,L:0,V:0};
+    Object.values(state.statuses).forEach(s=>counts[s]++);
+    $('#app').innerHTML = shell('#/attendance',`
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          <h1 class="text-2xl font-bold">Mark Attendance</h1>
+          <p class="text-sm text-slate-500">Select the class details below and mark attendance for each student.</p>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+          <span class="badge b-present">Present ${counts.P}</span>
+          <span class="badge b-absent">Absent ${counts.A}</span>
+          <span class="badge b-late">Late ${counts.L}</span>
+          <span class="badge b-leave">Leave ${counts.V}</span>
+        </div>
+      </div>
+
+      <div class="card p-4 mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div><label class="label">Department</label>
+            <select class="select" id="fDept"><option>AI & Data Science</option></select></div>
+          <div><label class="label">Semester</label>
+            <select class="select" id="fSem">${[1,2,3,4,5,6,7,8].map(s=>`<option ${state.semester==s?'selected':''}>${s}</option>`).join('')}</select></div>
+          <div><label class="label">Section</label>
+            <select class="select" id="fSec"><option>A</option><option>B</option></select></div>
+          <div><label class="label">Subject</label>
+            <select class="select" id="fSub">${db.subjects.map(s=>`<option value="${s.code}" ${state.subject===s.code?'selected':''}>${s.code} — ${s.name}</option>`).join('')}</select></div>
+          <div><label class="label">Date</label>
+            <input type="date" class="input" id="fDate" value="${state.date}" max="${todayISO()}"/></div>
+          <div><label class="label">Hour</label>
+            <select class="select" id="fHour">${db.hours.map(h=>`<option ${state.hour===h?'selected':''}>${h}</option>`).join('')}</select></div>
+        </div>
+        ${existing?`<div class="mt-3 text-xs ${readonly?'text-amber-700 bg-amber-50 border-amber-200':'text-blue-700 bg-blue-50 border-blue-200'} border rounded-lg px-3 py-2">
+          ${readonly?'⚠ This session is from a previous day and is <b>read-only</b>. Ask admin to unlock to edit.':'ℹ Editing existing session — changes will overwrite previous entry.'}
+        </div>`:''}
+      </div>
+
+      <div class="card overflow-hidden">
+        <div class="flex flex-wrap items-center gap-2 p-3 border-b border-slate-200 bg-slate-50">
+          <input id="qSearch" class="input max-w-xs" placeholder="Search by name or register no..."/>
+          <div class="ml-auto flex flex-wrap gap-2">
+            <button class="btn btn-outline" onclick="bulkStatus('P')">All Present</button>
+            <button class="btn btn-outline" onclick="bulkStatus('A')">All Absent</button>
+            <button class="btn btn-primary" id="btnSave" ${readonly?'disabled':''}>Save Attendance</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="text-left px-4 py-3">#</th>
+                <th class="text-left px-4 py-3">Register No</th>
+                <th class="text-left px-4 py-3">Name</th>
+                <th class="text-left px-4 py-3">Roll</th>
+                <th class="text-left px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody id="stuBody" class="divide-y divide-slate-100">
+              ${db.students.map((s,i)=>rowHTML(s,i)).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+    function rowHTML(s,i){
+      const st=state.statuses[s.regNo]||'P';
+      return `<tr class="row-hover" data-name="${s.name.toLowerCase()}" data-reg="${s.regNo.toLowerCase()}">
+        <td class="px-4 py-3 text-slate-500">${i+1}</td>
+        <td class="px-4 py-3 font-mono font-semibold">${s.regNo}</td>
+        <td class="px-4 py-3"><div class="font-medium">${s.name}</div><div class="text-xs text-slate-500">${s.gender}</div></td>
+        <td class="px-4 py-3 text-slate-600">${s.rollNo}</td>
+        <td class="px-4 py-3">
+          <div class="flex gap-1 flex-wrap">
+            ${['P','A','L','V'].map(x=>`<button ${readonly?'disabled':''} class="status-pill ${st===x?'active-'+x:''}" onclick="setStatus('${s.regNo}','${x}',this)">${{P:'Present',A:'Absent',L:'Late',V:'Leave'}[x]}</button>`).join('')}
+          </div>
+        </td>
+      </tr>`;
+    }
+    // bindings
+    ['fDept','fSem','fSec','fSub','fDate','fHour'].forEach(id=>$('#'+id).addEventListener('change',e=>{
+      const map={fDept:'department',fSem:'semester',fSec:'section',fSub:'subject',fDate:'date',fHour:'hour'};
+      state[map[id]]=e.target.value;
+      // reset statuses to P then re-draw so existing session repopulates
+      state.statuses=Object.fromEntries(db.students.map(s=>[s.regNo,'P']));
+      draw();
+    }));
+    $('#qSearch').addEventListener('input',e=>{
+      const q=e.target.value.toLowerCase();
+      $('#stuBody').querySelectorAll('tr').forEach(tr=>{
+        const ok = tr.dataset.name.includes(q)||tr.dataset.reg.includes(q);
+        tr.style.display = ok?'':'none';
+      });
+    });
+    $('#btnSave').addEventListener('click', ()=>{
+      try{
+        const records=db.students.map(s=>({regNo:s.regNo,status:state.statuses[s.regNo]||'P'}));
+        Svc.saveAttendance({date:state.date,hour:state.hour,subject:state.subject,section:state.section,semester:state.semester,records});
+        toast('Attendance saved successfully','success');
+        draw();
+      }catch(e){ toast(e.message,'error'); }
+    });
+    window.setStatus=(reg,st,btn)=>{
+      state.statuses[reg]=st;
+      const parent=btn.parentElement;
+      parent.querySelectorAll('.status-pill').forEach(b=>b.className=b.className.replace(/active-[PALV]/,''));
+      btn.classList.add('active-'+st);
+      // update counters
+      const c={P:0,A:0,L:0,V:0}; Object.values(state.statuses).forEach(s=>c[s]++);
+      // lightweight update
+    };
+    window.bulkStatus=(st)=>{ db.students.forEach(s=>state.statuses[s.regNo]=st); draw(); };
+  };
+  draw();
+}
+
+/* ---------- history ---------- */
+async function renderHistory(){
+  const db=Svc.getDB();
+  let filters={date:todayISO(), subject:'', q:''};
+  const draw=()=>{
+    let sessions=[...db.attendance].sort((a,b)=>(b.date+b.updatedAt).localeCompare(a.date+a.updatedAt));
+    if(filters.date) sessions=sessions.filter(s=>s.date===filters.date);
+    if(filters.subject) sessions=sessions.filter(s=>s.subject===filters.subject);
+    let rows=[];
+    sessions.forEach(sess=>{
+      sess.records.forEach(r=>{
+        const stu=db.students.find(s=>s.regNo===r.regNo); if(!stu) return;
+        if(filters.q){
+          const q=filters.q.toLowerCase();
+          if(!stu.name.toLowerCase().includes(q) && !stu.regNo.toLowerCase().includes(q)) return;
+        }
+        rows.push({session:sess,student:stu,status:r.status});
+      });
+    });
+    const summary={P:0,A:0,L:0,V:0};
+    rows.forEach(r=>summary[r.status]++);
+    $('#app').innerHTML = shell('#/history',`
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          <h1 class="text-2xl font-bold">Attendance History</h1>
+          <p class="text-sm text-slate-500">Browse and search historical attendance records.</p>
+        </div>
+      </div>
+      <div class="card p-4 mb-4">
+        <div class="grid md:grid-cols-4 gap-3">
+          <div><label class="label">Date</label><input type="date" class="input" id="hDate" value="${filters.date}" max="${todayISO()}"/></div>
+          <div><label class="label">Subject</label>
+            <select class="select" id="hSub"><option value="">All subjects</option>${db.subjects.map(s=>`<option value="${s.code}" ${filters.subject===s.code?'selected':''}>${s.code} — ${s.name}</option>`).join('')}</select></div>
+          <div class="md:col-span-2"><label class="label">Search student</label><input class="input" id="hQ" placeholder="Name or Register no..." value="${filters.q}"/></div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <span class="badge b-present">Present ${summary.P}</span>
+          <span class="badge b-absent">Absent ${summary.A}</span>
+          <span class="badge b-late">Late ${summary.L}</span>
+          <span class="badge b-leave">Leave ${summary.V}</span>
+          <span class="badge b-none">Total records ${rows.length}</span>
+          <button class="btn btn-outline ml-auto" onclick="window.__clearFilters()">Reset</button>
+        </div>
+      </div>
+      <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="text-left px-4 py-3">Date</th>
+                <th class="text-left px-4 py-3">Hour</th>
+                <th class="text-left px-4 py-3">Subject</th>
+                <th class="text-left px-4 py-3">Register No</th>
+                <th class="text-left px-4 py-3">Student</th>
+                <th class="text-left px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${rows.length===0?`<tr><td colspan="6" class="text-center text-slate-500 py-10">No attendance records found.</td></tr>`:
+              rows.map(r=>`<tr class="row-hover">
+                <td class="px-4 py-3">${fmtDate(r.session.date)}</td>
+                <td class="px-4 py-3 text-slate-600">${r.session.hour}</td>
+                <td class="px-4 py-3 font-semibold">${r.session.subject}</td>
+                <td class="px-4 py-3 font-mono">${r.student.regNo}</td>
+                <td class="px-4 py-3">${r.student.name}</td>
+                <td class="px-4 py-3"><span class="badge b-${{P:'present',A:'absent',L:'late',V:'leave'}[r.status]}">${{P:'Present',A:'Absent',L:'Late',V:'Leave'}[r.status]}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+    $('#hDate').addEventListener('change',e=>{filters.date=e.target.value; draw();});
+    $('#hSub').addEventListener('change',e=>{filters.subject=e.target.value; draw();});
+    $('#hQ').addEventListener('input',e=>{filters.q=e.target.value; draw();});
+    window.__clearFilters=()=>{filters={date:'',subject:'',q:''}; draw();};
+  };
+  draw();
+}
+
+/* ---------- students ---------- */
+async function renderStudents(){
+  const db=Svc.getDB();
+  const stats=Svc.overallStats();
+  let q='';
+  const draw=()=>{
+    const rows=stats.filter(s=>{
+      if(!q) return true;
+      const t=q.toLowerCase();
+      return s.student.name.toLowerCase().includes(t) || s.student.regNo.toLowerCase().includes(t) || String(s.pct.toFixed(1)).includes(t);
+    });
+    $('#app').innerHTML = shell('#/students',`
+      <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+        <div>
+          <h1 class="text-2xl font-bold">Students Directory</h1>
+          <p class="text-sm text-slate-500">Batch 2023 • AI & Data Science • Section A • Semester 5</p>
+        </div>
+        <div class="flex gap-2"><input id="stuQ" class="input w-72" placeholder="Search name, register no, or %..." value="${q}"/></div>
+      </div>
+      <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th class="text-left px-4 py-3">#</th>
+                <th class="text-left px-4 py-3">Register No</th>
+                <th class="text-left px-4 py-3">Roll</th>
+                <th class="text-left px-4 py-3">Name</th>
+                <th class="text-left px-4 py-3">Gender</th>
+                <th class="text-left px-4 py-3">Email</th>
+                <th class="text-left px-4 py-3">Phone</th>
+                <th class="text-left px-4 py-3">Attendance %</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${rows.map((r,i)=>{
+                const c=r.pct>=75?'text-emerald-600':r.pct>=60?'text-amber-600':'text-red-600';
+                return `<tr class="row-hover">
+                  <td class="px-4 py-3 text-slate-500">${i+1}</td>
+                  <td class="px-4 py-3 font-mono font-semibold">${r.student.regNo}</td>
+                  <td class="px-4 py-3">${r.student.rollNo}</td>
+                  <td class="px-4 py-3">${r.student.name}</td>
+                  <td class="px-4 py-3">${r.student.gender}</td>
+                  <td class="px-4 py-3 text-slate-600">${r.student.email}</td>
+                  <td class="px-4 py-3 text-slate-600">${r.student.phone}</td>
+                  <td class="px-4 py-3 font-bold ${c}">${r.pct.toFixed(1)}%</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+    $('#stuQ').addEventListener('input',e=>{q=e.target.value; draw();});
+  };
+  draw();
+}
+
+/* ---------- analytics ---------- */
+async function renderAnalytics(){
+  const db=Svc.getDB();
+  const stats=Svc.overallStats().filter(s=>s.total>0).sort((a,b)=>b.pct-a.pct);
+  const top=stats.slice(0,5);
+  const low=[...stats].reverse().slice(0,5);
+  const below75=stats.filter(s=>s.pct<db.settings.lowThreshold);
+  const below60=stats.filter(s=>s.pct<db.settings.criticalThreshold);
+  const avg = stats.reduce((a,b)=>a+b.pct,0)/(stats.length||1);
+  $('#app').innerHTML = shell('#/analytics',`
+    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+      <div>
+        <h1 class="text-2xl font-bold">Student Analytics</h1>
+        <p class="text-sm text-slate-500">Attendance intelligence across all sessions.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div class="card p-4"><div class="text-xs uppercase text-slate-500 font-semibold">Class Average</div><div class="text-3xl font-bold text-blue-700 mt-1">${avg.toFixed(1)}%</div></div>
+      <div class="card p-4"><div class="text-xs uppercase text-slate-500 font-semibold">Below 75%</div><div class="text-3xl font-bold text-amber-600 mt-1">${below75.length}</div></div>
+      <div class="card p-4"><div class="text-xs uppercase text-slate-500 font-semibold">Critical (&lt;60%)</div><div class="text-3xl font-bold text-red-600 mt-1">${below60.length}</div></div>
+      <div class="card p-4"><div class="text-xs uppercase text-slate-500 font-semibold">Total Sessions</div><div class="text-3xl font-bold mt-1">${db.attendance.length}</div></div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-4 mb-4">
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2">Top Attendance</h3>
+        <div class="space-y-2">
+          ${top.map(t=>`<div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 grid place-items-center font-semibold text-xs">${t.student.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div>
+            <div class="flex-1 min-w-0"><div class="text-sm font-semibold">${t.student.name}</div><div class="text-xs text-slate-500">${t.student.regNo}</div></div>
+            <div class="text-emerald-600 font-bold">${t.pct.toFixed(1)}%</div>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-2">Lowest Attendance</h3>
+        <div class="space-y-2">
+          ${low.map(t=>`<div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-full bg-red-100 text-red-700 grid place-items-center font-semibold text-xs">${t.student.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</div>
+            <div class="flex-1 min-w-0"><div class="text-sm font-semibold">${t.student.name}</div><div class="text-xs text-slate-500">${t.student.regNo}</div></div>
+            <div class="${t.pct<60?'text-red-600':'text-amber-600'} font-bold">${t.pct.toFixed(1)}%</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <h3 class="font-semibold mb-3">Attendance Distribution (all students)</h3>
+      <canvas id="chartDist" height="90"></canvas>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold">30-day Attendance Heatmap</h3>
+        <div class="text-xs text-slate-500 flex items-center gap-2">
+          <span class="heat" style="background:#dcfce7"></span> ≥90%
+          <span class="heat" style="background:#86efac"></span> 75-90%
+          <span class="heat" style="background:#fde68a"></span> 60-75%
+          <span class="heat" style="background:#fca5a5"></span> &lt;60%
+          <span class="heat" style="background:#e5e7eb"></span> No class
+        </div>
+      </div>
+      <div id="heatmap" class="overflow-x-auto"></div>
+    </div>
+
+    <div class="card overflow-hidden">
+      <div class="p-4 border-b border-slate-200"><h3 class="font-semibold">Per-Student Breakdown</h3></div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th class="text-left px-4 py-3">Register No</th>
+              <th class="text-left px-4 py-3">Name</th>
+              <th class="text-right px-4 py-3">Present</th>
+              <th class="text-right px-4 py-3">Absent</th>
+              <th class="text-right px-4 py-3">Late</th>
+              <th class="text-right px-4 py-3">Leave</th>
+              <th class="text-right px-4 py-3">Total</th>
+              <th class="text-left px-4 py-3">%</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${stats.map(s=>{
+              const c=s.pct>=75?'bg-emerald-500':s.pct>=60?'bg-amber-500':'bg-red-500';
+              return `<tr class="row-hover">
+                <td class="px-4 py-3 font-mono font-semibold">${s.student.regNo}</td>
+                <td class="px-4 py-3">${s.student.name}</td>
+                <td class="px-4 py-3 text-right">${s.P}</td>
+                <td class="px-4 py-3 text-right">${s.A}</td>
+                <td class="px-4 py-3 text-right">${s.L}</td>
+                <td class="px-4 py-3 text-right">${s.V}</td>
+                <td class="px-4 py-3 text-right">${s.total}</td>
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-2">
+                    <div class="w-28 h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full ${c}" style="width:${clamp(s.pct,0,100)}%"></div></div>
+                    <span class="font-semibold">${s.pct.toFixed(1)}%</span>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+  // dist chart
+  const buckets=[0,0,0,0,0]; // <50, 50-60, 60-75, 75-90, 90+
+  stats.forEach(s=>{ const p=s.pct; if(p<50)buckets[0]++; else if(p<60)buckets[1]++; else if(p<75)buckets[2]++; else if(p<90)buckets[3]++; else buckets[4]++; });
+  new Chart($('#chartDist'),{type:'bar',data:{labels:['<50%','50-60%','60-75%','75-90%','≥90%'],datasets:[{data:buckets,backgroundColor:['#dc2626','#ea580c','#ca8a04','#16a34a','#059669']}]},options:{plugins:{legend:{display:false}}}});
+  // heatmap
+  const hm=$('#heatmap');
+  hm.innerHTML = db.students.slice(0,40).map(s=>{
+    let cells='';
+    for(let i=29;i>=0;i--){
+      const d=new Date(); d.setDate(d.getDate()-i);
+      const iso=d.toISOString().slice(0,10);
+      const sess=db.attendance.filter(a=>a.date===iso);
+      if(sess.length===0){ cells+=`<span class="heat" style="background:#e5e7eb" title="${iso} no class"></span>`; continue; }
+      let tot=0,pl=0;
+      sess.forEach(x=>{ const r=x.records.find(y=>y.regNo===s.regNo); if(r){tot++; if(r.status==='P'||r.status==='L')pl++;} });
+      if(tot===0){cells+=`<span class="heat" style="background:#e5e7eb"></span>`; continue;}
+      const p=pl/tot*100;
+      const col = p>=90?'#dcfce7':p>=75?'#86efac':p>=60?'#fde68a':'#fca5a5';
+      cells+=`<span class="heat" style="background:${col}" title="${s.regNo} ${iso} ${p.toFixed(0)}%"></span>`;
+    }
+    return `<div class="flex items-center gap-2 py-0.5"><div class="w-24 text-xs font-mono text-slate-500 shrink-0">${s.regNo}</div><div>${cells}</div></div>`;
+  }).join('');
+}
+
+/* ---------- reports ---------- */
+async function renderReports(){
+  const db=Svc.getDB();
+  const today=todayISO();
+  $('#app').innerHTML = shell('#/reports',`
+    <div class="mb-5">
+      <h1 class="text-2xl font-bold">Reports</h1>
+      <p class="text-sm text-slate-500">Generate and export attendance reports as PDF, Excel, or CSV.</p>
+    </div>
+    <div class="card p-4 mb-4">
+      <div class="grid md:grid-cols-4 gap-3">
+        <div><label class="label">Report Type</label>
+          <select id="rType" class="select">
+            <option value="daily">Daily Report</option>
+            <option value="weekly">Weekly Report</option>
+            <option value="monthly">Monthly Report</option>
+            <option value="semester">Semester Report</option>
+          </select>
+        </div>
+        <div><label class="label">From</label><input type="date" id="rFrom" class="input" value="${today}"/></div>
+        <div><label class="label">To</label><input type="date" id="rTo" class="input" value="${today}" max="${today}"/></div>
+        <div><label class="label">Subject (optional)</label>
+          <select id="rSub" class="select"><option value="">All subjects</option>${db.subjects.map(s=>`<option value="${s.code}">${s.code} — ${s.name}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button class="btn btn-primary" id="rGen">Generate Preview</button>
+        <button class="btn btn-outline" id="rPdf">Export PDF</button>
+        <button class="btn btn-outline" id="rXlsx">Export Excel</button>
+        <button class="btn btn-outline" id="rCsv">Export CSV</button>
+      </div>
+    </div>
+    <div id="rOut" class="card p-4"><div class="text-sm text-slate-500">Select a range and click <b>Generate Preview</b>.</div></div>
+  `);
+  const setRange=()=>{
+    const t=$('#rType').value; const to=new Date(); let from=new Date();
+    if(t==='daily'){from=new Date();}
+    else if(t==='weekly'){from.setDate(to.getDate()-6);}
+    else if(t==='monthly'){from.setDate(to.getDate()-29);}
+    else {from.setDate(to.getDate()-119);}
+    $('#rFrom').value=from.toISOString().slice(0,10);
+    $('#rTo').value=to.toISOString().slice(0,10);
+  };
+  $('#rType').addEventListener('change',setRange);
+  const build=()=>{
+    const from=$('#rFrom').value, to=$('#rTo').value, sub=$('#rSub').value;
+    const stats = db.students.map(s=>({student:s, ...Svc.studentAttendanceStats(s.regNo,{from,to,subject:sub||undefined})}));
+    return {from,to,sub,stats};
+  };
+  $('#rGen').addEventListener('click',()=>{
+    const {from,to,sub,stats}=build();
+    const subLabel = sub? (db.subjects.find(s=>s.code===sub)?.name||sub) : 'All Subjects';
+    $('#rOut').innerHTML = `
+      <div class="flex flex-wrap items-center justify-between mb-3 gap-2">
+        <div>
+          <h3 class="font-semibold">Attendance Report</h3>
+          <div class="text-xs text-slate-500">${fmtDate(from)} → ${fmtDate(to)} • ${subLabel}</div>
+        </div>
+        <div class="text-xs text-slate-500">Total students: ${stats.length}</div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr>
+            <th class="text-left px-3 py-2">Reg No</th><th class="text-left px-3 py-2">Name</th>
+            <th class="text-right px-3 py-2">P</th><th class="text-right px-3 py-2">A</th>
+            <th class="text-right px-3 py-2">L</th><th class="text-right px-3 py-2">V</th>
+            <th class="text-right px-3 py-2">Total</th><th class="text-right px-3 py-2">%</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-100">
+            ${stats.map(s=>`<tr class="row-hover">
+              <td class="px-3 py-2 font-mono">${s.student.regNo}</td>
+              <td class="px-3 py-2">${s.student.name}</td>
+              <td class="px-3 py-2 text-right">${s.P}</td><td class="px-3 py-2 text-right">${s.A}</td>
+              <td class="px-3 py-2 text-right">${s.L}</td><td class="px-3 py-2 text-right">${s.V}</td>
+              <td class="px-3 py-2 text-right">${s.total}</td>
+              <td class="px-3 py-2 text-right font-semibold ${s.pct>=75?'text-emerald-600':s.pct>=60?'text-amber-600':'text-red-600'}">${s.pct.toFixed(1)}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    toast('Report generated','success');
+  });
+  $('#rPdf').addEventListener('click',()=>{
+    const {from,to,sub,stats}=build();
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(16); doc.text('Trichy Engineering College',14,16);
+    doc.setFontSize(10); doc.text('Department of AI & Data Science — Attendance Report',14,22);
+    doc.text(`Period: ${from} to ${to}   Subject: ${sub||'All'}`,14,28);
+    doc.autoTable({
+      startY:34,
+      head:[['Reg No','Name','P','A','L','V','Total','%']],
+      body:stats.map(s=>[s.student.regNo,s.student.name,s.P,s.A,s.L,s.V,s.total,s.pct.toFixed(1)+'%']),
+      styles:{fontSize:9}, headStyles:{fillColor:[37,99,235]}
+    });
+    doc.save(`attendance_${from}_to_${to}.pdf`);
+    toast('PDF downloaded','success');
+  });
+  $('#rXlsx').addEventListener('click',()=>{
+    const {from,to,sub,stats}=build();
+    const rows=[['Reg No','Name','Present','Absent','Late','Leave','Total','Percent']];
+    stats.forEach(s=>rows.push([s.student.regNo,s.student.name,s.P,s.A,s.L,s.V,s.total,+s.pct.toFixed(2)]));
+    const ws=XLSX.utils.aoa_to_sheet(rows); const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Attendance');
+    XLSX.writeFile(wb,`attendance_${from}_to_${to}.xlsx`);
+    toast('Excel downloaded','success');
+  });
+  $('#rCsv').addEventListener('click',()=>{
+    const {from,to,sub,stats}=build();
+    const lines=[['Reg No','Name','Present','Absent','Late','Leave','Total','Percent'].join(',')];
+    stats.forEach(s=>lines.push([s.student.regNo,`"${s.student.name}"`,s.P,s.A,s.L,s.V,s.total,s.pct.toFixed(2)].join(',')));
+    const blob=new Blob([lines.join('\n')],{type:'text/csv'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`attendance_${from}_to_${to}.csv`; a.click();
+    toast('CSV downloaded','success');
+  });
+}
+
+/* ---------- profile ---------- */
+async function renderProfile(){
+  const db=Svc.getDB(); const f=db.faculty;
+  $('#app').innerHTML = shell('#/profile',`
+    <h1 class="text-2xl font-bold mb-5">Faculty Profile</h1>
+    <div class="grid lg:grid-cols-3 gap-4">
+      <div class="card p-6 text-center">
+        <div class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 text-white grid place-items-center font-bold text-3xl mx-auto">${f.avatar}</div>
+        <h2 class="mt-4 font-bold text-lg">${f.name}</h2>
+        <div class="text-sm text-slate-500">${f.designation}</div>
+        <div class="text-xs text-slate-500 mt-1">${f.department}</div>
+      </div>
+      <div class="card p-6 lg:col-span-2">
+        <h3 class="font-semibold mb-4">Account Details</h3>
+        <dl class="grid sm:grid-cols-2 gap-4 text-sm">
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Faculty ID</dt><dd class="mt-1 font-mono font-semibold">${f.id}</dd></div>
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Username</dt><dd class="mt-1">${f.username}</dd></div>
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Email</dt><dd class="mt-1">${f.email}</dd></div>
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Phone</dt><dd class="mt-1">${f.phone}</dd></div>
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Department</dt><dd class="mt-1">${f.department}</dd></div>
+          <div><dt class="text-xs uppercase text-slate-500 font-semibold">Last Login</dt><dd class="mt-1">${f.lastLogin?new Date(f.lastLogin).toLocaleString('en-IN'):'—'}</dd></div>
+        </dl>
+        <div class="mt-6 flex flex-wrap gap-2">
+          <button class="btn btn-outline" onclick="alert('Password change flow coming soon.')">Change Password</button>
+          <button class="btn btn-danger" onclick="if(confirm('Reset entire database and re-seed? This will erase all attendance.')){localStorage.removeItem('tec_ams_v1');location.reload();}">Reset Demo Data</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-6 mt-4">
+      <h3 class="font-semibold mb-3">Audit Log (recent)</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr>
+            <th class="text-left px-4 py-2">Time</th><th class="text-left px-4 py-2">Actor</th>
+            <th class="text-left px-4 py-2">Action</th><th class="text-left px-4 py-2">Detail</th>
+          </tr></thead>
+          <tbody class="divide-y divide-slate-100">
+            ${[...db.audit].slice(-20).reverse().map(a=>`<tr>
+              <td class="px-4 py-2 text-slate-600">${new Date(a.at).toLocaleString('en-IN')}</td>
+              <td class="px-4 py-2">${a.actor}</td>
+              <td class="px-4 py-2 font-semibold">${a.action}</td>
+              <td class="px-4 py-2 text-slate-600">${a.detail}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+</script>
+</body>
+</html>
