@@ -1,7 +1,7 @@
-# FaceTrack AI — Face Recognition Attendance System
+# Attendance System
 
-A production-style, real-time face recognition attendance platform built with
-Flask, OpenCV, and `face_recognition` (dlib). Designed for colleges, schools,
+A production-style, attendance platform built with
+Designed for colleges, schools,
 and offices running on a single kiosk/lab PC with a webcam attached.
 
 **Status:** 100% complete and end-to-end tested (see below).
